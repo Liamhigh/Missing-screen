@@ -281,7 +281,7 @@ self.onmessage = async (event: MessageEvent<File>) => {
         self.postMessage({ type: 'progress', message: 'Constructing PDF from report data...' });
         const pdfBlob = await generatePdfReport(decodedResult, decodedResult.fileName);
 
-        self.postMessage({ type: 'success', blob: pdfBlob, fileName: decodedResult.fileName });
+        self.postMessage({ type: 'success', blob: pdfBlob, fileName: decodedResult.fileName, result: decodedResult });
 
     } catch (e: any) {
         console.error("Error in report worker:", e);

@@ -1,13 +1,15 @@
 
 import React, { useState, useCallback } from 'react';
-import type { AnalysisResult } from '../types';
-import { DownloadIcon, ResetIcon, CopyIcon, CheckIcon, CheckboxIcon, GavelIcon, EyeIcon, TargetIcon, AlertTriangleIcon, CheckCircleIcon, FileTextIcon, StarIcon, ChevronDownIcon } from './icons';
-import { generatePdfReport } from '../services/geminiService';
+import type { AnalysisResult } from '../types.ts';
+import { DownloadIcon, ResetIcon, CopyIcon, CheckIcon, CheckboxIcon, GavelIcon, EyeIcon, TargetIcon, AlertTriangleIcon, CheckCircleIcon, FileTextIcon, StarIcon, ChevronDownIcon, BinaryIcon } from './icons.tsx';
+import { generatePdfReport } from '../services/geminiService.ts';
+import { encodeReport } from '../services/reportSerializer.ts';
 
 interface AnalysisDisplayProps {
   result: AnalysisResult;
   fileName: string;
   onReset: () => void;
+  pdfBlob?: Blob | null;
 }
 
 const SeverityBadge: React.FC<{ severity: 'Low' | 'Medium' | 'High' | 'Critical' }> = ({ severity }) => {
@@ -64,9 +66,10 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, ch
   );
 };
 
-export const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ result, fileName, onReset }) => {
+export const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ result, fileName, onReset, pdfBlob }) => {
   const [activeTab, setActiveTab] = useState('summary');
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isEncoding, setIsEncoding] = useState(false);
   const [isHashCopied, setIsHashCopied] = useState(false);
   
   const handleCopyHash = useCallback(() => {
@@ -79,12 +82,52 @@ export const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ result, fileNa
   const handleDownloadPdfReport = useCallback(async () => {
     setIsDownloadingPdf(true);
     try {
-      await generatePdfReport(result, fileName);
+      let reportBlob: Blob;
+      if (pdfBlob) {
+        reportBlob = pdfBlob;
+      } else {
+        reportBlob = await generatePdfReport(result, fileName);
+      }
+      
+      const url = URL.createObjectURL(reportBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      a.download = `${safeFileName}_verum_omnis_report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
     } catch (error) {
       console.error("Error generating PDF report:", error);
       alert("An error occurred while generating the PDF report. See console for details.");
     } finally {
       setIsDownloadingPdf(false);
+    }
+  }, [result, fileName, pdfBlob]);
+
+  const handleDownloadBinaryReport = useCallback(async () => {
+    setIsEncoding(true);
+    try {
+      const buffer = encodeReport(result);
+      if (buffer) {
+        const blob = new Blob([buffer], { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${safeFileName}.verum.bin`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error("Error encoding report:", error);
+      alert("An error occurred while encoding the report. See console for details.");
+    } finally {
+      setIsEncoding(false);
     }
   }, [result, fileName]);
 
@@ -284,10 +327,18 @@ export const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ result, fileNa
         </div>
       </div>
      
-      <div className="mt-8 text-center flex items-center justify-center space-x-4">
+      <div className="mt-8 text-center flex items-center justify-center space-x-4 flex-wrap gap-y-4">
         <button onClick={handleDownloadPdfReport} disabled={isDownloadingPdf} className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-75">
           <DownloadIcon className="w-5 h-5" />
           <span>{isDownloadingPdf ? 'Generating...' : 'Download PDF Report'}</span>
+        </button>
+        <button
+          onClick={handleDownloadBinaryReport}
+          disabled={isEncoding}
+          className="px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 transition-colors flex items-center space-x-2 disabled:opacity-75"
+        >
+          <BinaryIcon className="w-5 h-5" />
+          <span>{isEncoding ? 'Encoding...' : 'Save .bin Report'}</span>
         </button>
         <button onClick={onReset} className="px-6 py-3 bg-gray-700/50 border border-gray-600 text-gray-300 font-semibold rounded-lg hover:bg-gray-700 flex items-center space-x-2">
           <ResetIcon className="w-5 h-5" />

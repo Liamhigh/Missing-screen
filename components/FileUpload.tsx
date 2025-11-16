@@ -1,12 +1,13 @@
 
 import React, { useCallback, useState } from 'react';
-import { FileIcon } from './icons';
+import { FileIcon } from './icons.tsx';
 
 interface FileUploadProps {
   onFileUpload: (file: File) => void;
+  onReportUpload: (file: File) => void;
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload, onReportUpload }) => {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
@@ -26,18 +27,27 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
     e.stopPropagation();
   }, []);
 
+  const handleFile = (file: File | undefined | null) => {
+    if (!file) return;
+    if (file.name.toLowerCase().endsWith('.verum.bin')) {
+      onReportUpload(file);
+    } else {
+      onFileUpload(file);
+    }
+  };
+
   const handleDrop = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFileUpload(e.dataTransfer.files[0]);
+      handleFile(e.dataTransfer.files[0]);
     }
-  }, [onFileUpload]);
+  }, [onFileUpload, onReportUpload]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFileUpload(e.target.files[0]);
+      handleFile(e.target.files[0]);
     }
   };
 
@@ -65,6 +75,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
             <span className="font-semibold text-blue-400">Click to upload evidence</span> or drag and drop
           </p>
           <p className="text-xs text-gray-500">Supports PDF, DOCX, TXT, PNG, JPG, and other common document formats.</p>
+          <p className="text-xs text-gray-500">You can also load a previously saved <code className="font-semibold text-gray-400">.verum.bin</code> report file.</p>
         </div>
         <input
           type="file"

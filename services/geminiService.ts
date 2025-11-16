@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import type { AnalysisResult } from '../types';
+import type { AnalysisResult } from '../types.ts';
 
 // @ts-ignore
 const { jsPDF } = window.jspdf;
@@ -205,7 +205,7 @@ export const analyzeDocument = async (
 
 // --- PDF REPORT GENERATOR (V3 - NARRATIVE & INDEXING) ---
 
-export const generatePdfReport = async (result: AnalysisResult, fileName: string) => {
+export const generatePdfReport = async (result: AnalysisResult, fileName: string): Promise<Blob> => {
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 15;
@@ -394,7 +394,5 @@ export const generatePdfReport = async (result: AnalysisResult, fileName: string
     doc.setFont('Source Code Pro', 'normal');
     doc.text(`Document SHA-512 Hash: ${result.documentHash}`, margin, y, { maxWidth: contentWidth });
 
-    // Save the PDF
-    const safeFileName = fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    doc.save(`${safeFileName}_verum_omnis_report.pdf`);
+    return doc.output('blob');
 };

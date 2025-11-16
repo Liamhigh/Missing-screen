@@ -1,5 +1,5 @@
 
-import type { AnalysisResult } from '../types';
+import type { AnalysisResult } from '../types.ts';
 
 // This relies on protobuf.js being loaded from a script tag in index.html
 declare const protobuf: any;

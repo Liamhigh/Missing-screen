@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LogoIcon } from './icons';
+import { LogoIcon } from './icons.tsx';
 
 interface HeaderProps {
     onReset: () => void;

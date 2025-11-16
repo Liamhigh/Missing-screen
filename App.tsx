@@ -1,12 +1,12 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { FileUpload } from './components/FileUpload';
-import { AnalysisDisplay } from './components/AnalysisDisplay';
-import { Loader } from './components/Loader';
-import { Header } from './components/Header';
-import { analyzeDocument } from './services/geminiService';
-import type { AnalysisResult } from './types';
-import { ChatAssistant } from './components/ChatAssistant';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { FileUpload } from './components/FileUpload.tsx';
+import { AnalysisDisplay } from './components/AnalysisDisplay.tsx';
+import { Loader } from './components/Loader.tsx';
+import { Header } from './components/Header.tsx';
+import { analyzeDocument } from './services/geminiService.ts';
+import type { AnalysisResult } from './types.ts';
+import { ChatAssistant } from './components/ChatAssistant.tsx';
 
 const getCurrentLocation = (): Promise<{ latitude: number; longitude: number } | null> => {
   return new Promise((resolve) => {
@@ -40,16 +40,47 @@ type View = 'chat' | 'upload' | 'loading' | 'analysis';
 const App: React.FC = () => {
   const [view, setView] = useState<View>('chat');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [loadedPdfBlob, setLoadedPdfBlob] = useState<Blob | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loaderMessage, setLoaderMessage] = useState<string | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    workerRef.current = new Worker('./services/report.worker.ts', {
+      type: 'module',
+    });
+
+    workerRef.current.onmessage = (event: MessageEvent) => {
+      const { type, message, blob, result, fileName } = event.data;
+      setIsLoading(false);
+
+      if (type === 'progress') {
+        setLoaderMessage(message);
+        setIsLoading(true); // Keep loading state for progress messages
+      } else if (type === 'success') {
+        setCurrentFile(new File([blob], fileName, { type: 'application/pdf' }));
+        setAnalysisResult(result);
+        setLoadedPdfBlob(blob);
+        setView('analysis');
+      } else if (type === 'error') {
+        setError(`Failed to load report: ${message}`);
+        setView('upload');
+      }
+    };
+
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, []);
 
   const handleFileAnalysis = useCallback(async (file: File) => {
     setIsLoading(true);
     setView('loading');
     setError(null);
     setAnalysisResult(null);
+    setLoadedPdfBlob(null);
     setCurrentFile(file);
     setLoaderMessage('Acquiring jurisdictional context...');
 
@@ -100,6 +131,21 @@ const App: React.FC = () => {
         setView('upload');
     }
   }, []);
+  
+  const handleReportUpload = useCallback((file: File) => {
+    if (!workerRef.current) {
+      setError('Report processing service is not available.');
+      return;
+    }
+    setIsLoading(true);
+    setView('loading');
+    setError(null);
+    setAnalysisResult(null);
+    setCurrentFile(file);
+    setLoadedPdfBlob(null);
+    setLoaderMessage('Initializing report loader...');
+    workerRef.current.postMessage(file);
+  }, []);
 
   const handleReset = useCallback(() => {
     setView('chat');
@@ -107,6 +153,7 @@ const App: React.FC = () => {
     setCurrentFile(null);
     setError(null);
     setIsLoading(false);
+    setLoadedPdfBlob(null);
   }, []);
 
   return (
@@ -133,10 +180,10 @@ const App: React.FC = () => {
           )}
 
           {view === 'chat' && <ChatAssistant onProceed={() => setView('upload')} />}
-          {view === 'upload' && <FileUpload onFileUpload={handleFileAnalysis} />}
+          {view === 'upload' && <FileUpload onFileUpload={handleFileAnalysis} onReportUpload={handleReportUpload} />}
           {view === 'loading' && currentFile && <Loader fileName={currentFile.name} message={loaderMessage} />}
           {view === 'analysis' && analysisResult && currentFile && (
-            <AnalysisDisplay result={analysisResult} fileName={currentFile.name} onReset={handleReset} />
+            <AnalysisDisplay result={analysisResult} fileName={currentFile.name} onReset={handleReset} pdfBlob={loadedPdfBlob} />
           )}
         </main>
       </div>
