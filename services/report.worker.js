@@ -1,14 +1,10 @@
 
-// --- report.worker.ts ---
+// --- report.worker.js ---
 // This worker runs in the background to process large .verum.bin files
 // and generate complex PDF reports without freezing the main UI thread.
 
 // Since this is a worker, we load global scripts using importScripts
 // Note: These URLs must be accessible from the worker's context.
-import type { AnalysisResult, RecommendedAction, TopLiability, EvidenceSpotlightItem, LegalSubjectFinding, DishonestyFinding, EvidenceIndexItem } from '../types.ts';
-
-declare const protobuf: any;
-declare const jspdf: any;
 
 try {
     importScripts(
@@ -44,79 +40,43 @@ message AnalysisResult {
   PostAnalysisDeclaration post_analysis_declaration = 12;
 }`;
 
-let ReportMessage: any = null;
+let ReportMessage = null;
 const initialize = () => {
     if (ReportMessage || typeof protobuf === 'undefined') return;
     const root = protobuf.parse(protoDefinition).root;
     ReportMessage = root.lookupType("verumomnis.AnalysisResult");
 };
 
-const fromProtoPayload = (payload: any): AnalysisResult => ({
-    documentHash: payload.document_hash,
-    fileName: payload.file_name,
-    caseNarrative: payload.case_narrative,
-    evidenceSpotlight: payload.evidence_spotlight.map((item: any) => ({
-        title: item.title,
-        significance: item.significance,
-        evidenceReference: item.evidence_reference,
-        pageNumber: item.page_number,
-    })),
-    evidenceIndex: payload.evidence_index.map((item: any) => ({
-        id: item.id,
-        description: item.description,
-        pageNumber: item.page_number,
-        documentReference: item.document_reference,
-    })),
-    preAnalysisChecks: {
-        extractionProtocol: payload.pre_analysis_checks.extraction_protocol,
-        preservationFlags: payload.pre_analysis_checks.preservation_flags,
-        scope: payload.pre_analysis_checks.scope,
-    },
-    criticalLegalSubjects: payload.critical_legal_subjects.map((item: any) => ({
-        subject: item.subject,
-        keyPoints: item.key_points,
-        evidence: item.evidence,
-        severity: item.severity,
-    })),
-    dishonestyDetectionMatrix: payload.dishonesty_detection_matrix.map((item: any) => ({
-        flag: item.flag,
-        description: item.description,
-        evidence: item.evidence,
-        severity: item.severity,
-    })),
+const fromProtoPayload = (payload) => ({
+    documentHash: payload.document_hash, fileName: payload.file_name, caseNarrative: payload.case_narrative,
+    evidenceSpotlight: payload.evidence_spotlight.map((i) => ({ title: i.title, significance: i.significance, evidenceReference: i.evidence_reference, pageNumber: i.page_number })),
+    evidenceIndex: payload.evidence_index.map((i) => ({ id: i.id, description: i.description, pageNumber: i.page_number, documentReference: i.document_reference })),
+    preAnalysisChecks: { extractionProtocol: payload.pre_analysis_checks.extraction_protocol, preservationFlags: payload.pre_analysis_checks.preservation_flags, scope: payload.pre_analysis_checks.scope },
+    criticalLegalSubjects: payload.critical_legal_subjects.map((i) => ({ subject: i.subject, keyPoints: i.key_points, evidence: i.evidence, severity: i.severity })),
+    dishonestyDetectionMatrix: payload.dishonesty_detection_matrix.map((i) => ({ flag: i.flag, description: i.description, evidence: i.evidence, severity: i.severity })),
     actionableOutput: {
-        topLiabilities: payload.actionable_output.top_liabilities,
-        dishonestyScore: payload.actionable_output.dishonesty_score,
-        recommendedActions: payload.actionable_output.recommended_actions.map((item: any) => ({
-            jurisdiction: item.jurisdiction,
-            action: item.action,
-            legalBasis: item.legal_basis,
-        })),
+        topLiabilities: payload.actionable_output.top_liabilities, dishonestyScore: payload.actionable_output.dishonesty_score,
+        recommendedActions: payload.actionable_output.recommended_actions.map((i) => ({ jurisdiction: i.jurisdiction, action: i.action, legalBasis: i.legal_basis })),
         summary: payload.actionable_output.summary,
     },
-    postAnalysisDeclaration: {
-        extractionComplete: payload.post_analysis_declaration.extraction_complete,
-        integritySealsVerified: payload.post_analysis_declaration.integrity_seals_verified,
-        logs: payload.post_analysis_declaration.logs,
-        seal: payload.post_analysis_declaration.seal,
-    },
+    postAnalysisDeclaration: { extractionComplete: payload.post_analysis_declaration.extraction_complete, integritySealsVerified: payload.post_analysis_declaration.integrity_seals_verified, logs: payload.post_analysis_declaration.logs, seal: payload.post_analysis_declaration.seal },
 });
 
-const decodeReport = (buffer: Uint8Array): Promise<AnalysisResult> => new Promise((resolve, reject) => {
+const decodeReport = (buffer) => new Promise((resolve, reject) => {
     initialize();
     if (!ReportMessage) return reject(new Error("Protobuf message type not initialized."));
     try {
         const decodedMessage = ReportMessage.decode(buffer);
         const object = ReportMessage.toObject(decodedMessage, { longs: String, enums: String, bytes: String });
         resolve(fromProtoPayload(object));
-    } catch (e: any) {
+    } catch (e) {
         reject(e);
     }
 });
 
 
 // --- PDF GENERATOR LOGIC ---
-const generatePdfReport = async (result: AnalysisResult, fileName: string): Promise<Blob> => {
+const generatePdfReport = async (result, fileName) => {
     const { jsPDF } = jspdf;
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     
@@ -126,7 +86,7 @@ const generatePdfReport = async (result: AnalysisResult, fileName: string): Prom
     let y = 0;
 
     const checkPageBreak = () => { if (y > 255) { doc.addPage(); y = 20; } }
-    const addHeader = (title: string, onFirstPage = false) => {
+    const addHeader = (title, onFirstPage = false) => {
         if (!onFirstPage) y = 20;
         doc.setFont('Roboto Mono', 'bold'); doc.setFontSize(16);
         doc.text("DEEPSEEK VERUM OMNIS: INSTITUTIONAL REVIEW", pageWidth / 2, y, { align: 'center' }); y += 7;
@@ -134,19 +94,19 @@ const generatePdfReport = async (result: AnalysisResult, fileName: string): Prom
         doc.text(`Forensic Analysis Report: ${title}`, pageWidth / 2, y, { align: 'center' }); y += 10;
         doc.setDrawColor(200); doc.line(margin, y, pageWidth - margin, y); y += 10;
     };
-    const addSectionTitle = (title: string) => {
+    const addSectionTitle = (title) => {
         checkPageBreak();
         doc.setFillColor(230, 230, 250); doc.rect(margin, y - 5, contentWidth, 10, 'F');
         doc.setFont('Roboto Mono', 'bold'); doc.setFontSize(12); doc.setTextColor(50);
         doc.text(title.toUpperCase(), margin + 3, y); y += 12;
     };
-    const addText = (text: string | string[], size: number, weight = 'normal', indent = 0) => {
+    const addText = (text, size, weight = 'normal', indent = 0) => {
         checkPageBreak(); doc.setFontSize(size); doc.setFont('Source Code Pro', weight); doc.setTextColor(34, 34, 34);
         const lines = doc.splitTextToSize(text, contentWidth - indent);
         doc.text(lines, margin + indent, y); y += (lines.length * size * 0.45);
         return lines.length;
     };
-    const addTable = (head: any, body: any, startY: number) => {
+    const addTable = (head, body, startY) => {
       doc.autoTable({
           head, body, startY, theme: 'grid',
           headStyles: { fillColor: [50, 50, 50], textColor: 255, font: 'Roboto Mono', fontStyle: 'bold' },
@@ -165,11 +125,11 @@ const generatePdfReport = async (result: AnalysisResult, fileName: string): Prom
     
     let tableY = y;
     let head = [["Jurisdiction", "Recommended Action", "Legal Basis"]];
-    let body = result.actionableOutput.recommendedActions.map((a: RecommendedAction) => [a.jurisdiction, a.action, a.legalBasis]);
+    let body = result.actionableOutput.recommendedActions.map((a) => [a.jurisdiction, a.action, a.legalBasis]);
     y = addTable(head, body, tableY); y += 10;
     
     head = [["Identified Top Liabilities", "Severity"]];
-    body = result.actionableOutput.topLiabilities.map((l: TopLiability) => [l.name, l.severity]);
+    body = result.actionableOutput.topLiabilities.map((l) => [l.name, l.severity]);
     y = addTable(head, body, y);
     y += 10;
 
@@ -180,7 +140,7 @@ const generatePdfReport = async (result: AnalysisResult, fileName: string): Prom
 
     checkPageBreak();
     addSectionTitle("Evidence Spotlight");
-    result.evidenceSpotlight.forEach((item: EvidenceSpotlightItem) => {
+    result.evidenceSpotlight.forEach((item) => {
         checkPageBreak();
         const startY = y;
         doc.setFont('Source Code Pro', 'bold'); doc.setFontSize(10);
@@ -206,20 +166,20 @@ const generatePdfReport = async (result: AnalysisResult, fileName: string): Prom
     addHeader(fileName);
     addSectionTitle("Critical Legal Subjects");
     head = [["Subject", "Key Points", "Evidence", "Severity"]];
-    body = result.criticalLegalSubjects.map((s: LegalSubjectFinding) => [s.subject, s.keyPoints.join('\n'), s.evidence, s.severity]);
+    body = result.criticalLegalSubjects.map((s) => [s.subject, s.keyPoints.join('\n'), s.evidence, s.severity]);
     y = addTable(head, body, y); y += 10;
 
     checkPageBreak();
     addSectionTitle("Dishonesty Detection Matrix");
     head = [["Flag", "Description", "Evidence", "Severity"]];
-    body = result.dishonestyDetectionMatrix.map((d: DishonestyFinding) => [d.flag, d.description, d.evidence, d.severity]);
+    body = result.dishonestyDetectionMatrix.map((d) => [d.flag, d.description, d.evidence, d.severity]);
     y = addTable(head, body, y); y += 10;
     
     doc.addPage();
     addHeader(fileName);
     addSectionTitle("Evidence Index");
     head = [["ID", "Description", "Page"]];
-    body = result.evidenceIndex.map((e: EvidenceIndexItem) => [e.id, e.description, String(e.pageNumber)]);
+    body = result.evidenceIndex.map((e) => [e.id, e.description, String(e.pageNumber)]);
     y = addTable(head, body, y);
 
     y = 250;
@@ -252,31 +212,31 @@ const generatePdfReport = async (result: AnalysisResult, fileName: string): Prom
     return doc.output('blob');
 };
 
-const handleBinFile = async (file: File) => {
+const handleBinFile = async (file) => {
     try {
         self.postMessage({ type: 'progress', message: 'Reading file into memory...' });
         const buffer = await file.arrayBuffer();
         const uint8Array = new Uint8Array(buffer);
 
         self.postMessage({ type: 'progress', message: 'Decoding binary report...' });
-        const decodedResult: AnalysisResult = await decodeReport(uint8Array);
+        const decodedResult = await decodeReport(uint8Array);
 
         self.postMessage({ type: 'progress', message: 'Constructing PDF from report data...' });
         const pdfBlob = await generatePdfReport(decodedResult, decodedResult.fileName);
 
         self.postMessage({ type: 'success', blob: pdfBlob, fileName: decodedResult.fileName, result: decodedResult });
 
-    } catch (e: any) {
+    } catch (e) {
         console.error("Error in report worker:", e);
         self.postMessage({ type: 'error', message: e.message || 'An unknown error occurred.' });
     }
 };
 
-const handlePdfRequest = async (result: AnalysisResult, fileName: string) => {
+const handlePdfRequest = async (result, fileName) => {
     try {
         const pdfBlob = await generatePdfReport(result, fileName);
         self.postMessage({ type: 'pdfGenerated', blob: pdfBlob });
-    } catch (e: any) {
+    } catch (e) {
         console.error("Error generating PDF in worker:", e);
         self.postMessage({ type: 'error', message: e.message || 'Failed to generate PDF.' });
     }
@@ -284,7 +244,7 @@ const handlePdfRequest = async (result: AnalysisResult, fileName: string) => {
 
 
 // --- WORKER MAIN LOGIC ---
-self.onmessage = async (event: MessageEvent) => {
+self.onmessage = async (event) => {
     const data = event.data;
 
     if (data instanceof File) {
@@ -295,5 +255,3 @@ self.onmessage = async (event: MessageEvent) => {
         self.postMessage({ type: 'error', message: 'Unknown message type received by worker.' });
     }
 };
-
-export {};

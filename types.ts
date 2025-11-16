@@ -19,6 +19,12 @@ export interface RecommendedAction {
   legalBasis: string;
 }
 
+// FIX: Exported the TopLiability interface so it can be imported in other files.
+export interface TopLiability {
+  name: string;
+  severity: 'High' | 'Critical';
+}
+
 export interface EvidenceIndexItem {
   id: string;
   description: string;
@@ -47,7 +53,7 @@ export interface AnalysisResult {
   dishonestyDetectionMatrix: DishonestyFinding[];
   evidenceIndex: EvidenceIndexItem[];
   actionableOutput: {
-    topLiabilities: { name: string, severity: 'High' | 'Critical' }[];
+    topLiabilities: TopLiability[];
     dishonestyScore: number;
     recommendedActions: RecommendedAction[];
     summary: string;

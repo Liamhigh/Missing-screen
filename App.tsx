@@ -37,43 +37,77 @@ const getCurrentLocation = (): Promise<{ latitude: number; longitude: number } |
 
 type View = 'chat' | 'upload' | 'loading' | 'analysis';
 
+type WorkerMessageData =
+  | { type: 'progress'; message: string }
+  | { type: 'success'; blob: Blob; result: AnalysisResult; fileName: string }
+  | { type: 'pdfGenerated'; blob: Blob }
+  | { type: 'error'; message: string };
+
+
+const triggerDownload = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+
 const App: React.FC = () => {
   const [view, setView] = useState<View>('chat');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [loadedPdfBlob, setLoadedPdfBlob] = useState<Blob | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [loaderMessage, setLoaderMessage] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
+  // Effect to create and terminate the worker. Runs only once.
   useEffect(() => {
-    workerRef.current = new Worker('./services/report.worker.ts', {
-      type: 'module',
-    });
+    // Use a root-relative path to ensure the worker is found correctly,
+    // and specify 'classic' type as it uses importScripts.
+    workerRef.current = new Worker('/services/report.worker.js', { type: 'classic' });
 
-    workerRef.current.onmessage = (event: MessageEvent) => {
-      const { type, message, blob, result, fileName } = event.data;
-      setIsLoading(false);
+    const worker = workerRef.current;
+    return () => {
+      worker?.terminate();
+    };
+  }, []);
 
-      if (type === 'progress') {
-        setLoaderMessage(message);
+  // Effect to handle messages from the worker. Re-attaches the handler
+  // when analysisResult changes to avoid stale closures.
+  useEffect(() => {
+    if (!workerRef.current) return;
+
+    workerRef.current.onmessage = (event: MessageEvent<WorkerMessageData>) => {
+      const data = event.data;
+      
+      if (data.type === 'progress') {
+        setLoaderMessage(data.message);
         setIsLoading(true); // Keep loading state for progress messages
-      } else if (type === 'success') {
-        setCurrentFile(new File([blob], fileName, { type: 'application/pdf' }));
-        setAnalysisResult(result);
-        setLoadedPdfBlob(blob);
+      } else if (data.type === 'success') {
+        setIsLoading(false);
+        setCurrentFile(new File([data.blob], data.fileName, { type: 'application/pdf' }));
+        setAnalysisResult(data.result);
+        setLoadedPdfBlob(data.blob);
         setView('analysis');
-      } else if (type === 'error') {
-        setError(`Failed to load report: ${message}`);
+      } else if (data.type === 'pdfGenerated') {
+        const safeFileName = (analysisResult?.fileName || 'report').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        triggerDownload(data.blob, `${safeFileName}_verum_omnis_report.pdf`);
+        setIsGeneratingPdf(false);
+      } else if (data.type === 'error') {
+        setIsLoading(false);
+        setIsGeneratingPdf(false);
+        setError(`An error occurred in the background worker: ${data.message}`);
         setView('upload');
       }
     };
-
-    return () => {
-      workerRef.current?.terminate();
-    };
-  }, []);
+  }, [analysisResult]);
 
   const handleFileAnalysis = useCallback(async (file: File) => {
     setIsLoading(true);
@@ -147,6 +181,15 @@ const App: React.FC = () => {
     workerRef.current.postMessage(file);
   }, []);
 
+  const handleRequestPdf = useCallback((result: AnalysisResult, fileName: string) => {
+    if (!workerRef.current) {
+      setError('PDF generation service is not available.');
+      return;
+    }
+    setIsGeneratingPdf(true);
+    workerRef.current.postMessage({ type: 'generatePdf', result, fileName });
+  }, []);
+
   const handleReset = useCallback(() => {
     setView('chat');
     setAnalysisResult(null);
@@ -183,7 +226,14 @@ const App: React.FC = () => {
           {view === 'upload' && <FileUpload onFileUpload={handleFileAnalysis} onReportUpload={handleReportUpload} />}
           {view === 'loading' && currentFile && <Loader fileName={currentFile.name} message={loaderMessage} />}
           {view === 'analysis' && analysisResult && currentFile && (
-            <AnalysisDisplay result={analysisResult} fileName={currentFile.name} onReset={handleReset} pdfBlob={loadedPdfBlob} />
+            <AnalysisDisplay 
+              result={analysisResult} 
+              file={currentFile} 
+              onReset={handleReset} 
+              pdfBlob={loadedPdfBlob}
+              onGeneratePdfRequest={handleRequestPdf}
+              isGeneratingPdf={isGeneratingPdf}
+            />
           )}
         </main>
       </div>

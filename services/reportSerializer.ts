@@ -248,7 +248,7 @@ export const decodeReport = (buffer: Uint8Array): Promise<AnalysisResult> => {
             });
             const result = fromProtoPayload(object);
             resolve(result);
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to decode report:", e);
             reject(e);
         }
