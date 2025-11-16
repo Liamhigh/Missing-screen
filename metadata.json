@@ -1,0 +1,7 @@
+{
+  "name": "Verum Omnis: Forensic AI Analyst",
+  "description": "An advanced forensic analysis application powered by AI. Upload documents or images to receive a detailed breakdown based on legal, forensic, behavioral, and financial intelligence.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
